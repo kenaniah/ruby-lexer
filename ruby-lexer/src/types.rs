@@ -8,7 +8,7 @@ type Parsed<'a, T> = IResult<Input<'a>, T>;
 pub type Expression = Vec<Token>;
 
 /// Describes the lexer's input type
-pub type Input<'a> = TrackedLocation<'a, &'a str, Metadata<'a>>;
+pub type Input<'a> = TrackedLocation<&'a str, Metadata<'a>>;
 
 /// Describes a list of statements
 pub type StatementList = Vec<Token>;

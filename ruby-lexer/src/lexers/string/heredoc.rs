@@ -17,11 +17,17 @@ use nom::sequence::{delimited, preceded, terminated};
 
 /// *heredoc_start_line* *heredoc_body* *heredoc_end_line*
 pub(crate) fn here_document(i: Input) -> TokenResult {
-    wrap_heredoc(delimited(
-        heredoc_start_line,
-        heredoc_body,
-        heredoc_end_line,
-    ))(i)
+    wrap_heredoc(_here_document)(i)
+}
+
+// When dealing with heredocs, the parser has to make a jump in the input.
+// First, the heredoc is parsed, and parsing continues using the rest of the heredoc's start line.
+// Only then does parsing resume after the heredoc's ending identifier.
+fn _here_document(i: Input) -> TokenResult {
+    let (i, mut line) = heredoc_start_line(i)?;
+    let (remaining, token) = terminated(heredoc_body, heredoc_end_line)(i)?;
+    line.remaining_input = Some(Box::new(remaining));
+    Ok((line, token))
 }
 
 /// *heredoc_signifier* *rest_of_line*
