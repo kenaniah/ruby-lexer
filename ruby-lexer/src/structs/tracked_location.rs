@@ -8,7 +8,7 @@ use nom::{
 
 /// Tracks location information and user-defined metadata for nom's source input.
 #[derive(Debug, Clone, Copy)]
-pub struct TrackedLocation<T, X> {
+pub struct TrackedLocation<'a, T, X> {
     /// The offset represents the current byte position relative to the original input
     offset: usize,
     /// Tracks the current line number (starts at 1)
@@ -19,16 +19,18 @@ pub struct TrackedLocation<T, X> {
     input: T,
     /// Any user-defined metadata that should be tracked in addition to the location
     pub metadata: X,
+    /// Tracks a reference to the remaining input from the heredoc's start line
+    pub(crate) remaining_input: Option<&'a Self>,
 }
 
-impl<T, X> Deref for TrackedLocation<T, X> {
+impl<T, X> Deref for TrackedLocation<'_, T, X> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.input
     }
 }
 
-impl<T: AsBytes, X> TrackedLocation<T, X> {
+impl<T: AsBytes, X> TrackedLocation<'_, T, X> {
     pub fn new_with_metadata(program: T, metadata: X) -> Self {
         Self {
             offset: 0,
@@ -36,6 +38,7 @@ impl<T: AsBytes, X> TrackedLocation<T, X> {
             char: 1,
             input: program,
             metadata: metadata,
+            remaining_input: None,
         }
     }
     pub fn offset(&self) -> usize {
@@ -58,7 +61,7 @@ impl<T: AsBytes, X> TrackedLocation<T, X> {
     }
 }
 
-impl<T: AsBytes, X: Default> TrackedLocation<T, X> {
+impl<T: AsBytes, X: Default> TrackedLocation<'_, T, X> {
     pub fn new(program: T) -> Self {
         Self {
             offset: 0,
@@ -66,6 +69,7 @@ impl<T: AsBytes, X: Default> TrackedLocation<T, X> {
             char: 1,
             input: program,
             metadata: X::default(),
+            remaining_input: None,
         }
     }
     pub fn new_with_pos(program: T, offset: usize, line: usize, char: usize) -> Self {
@@ -75,11 +79,12 @@ impl<T: AsBytes, X: Default> TrackedLocation<T, X> {
             char: char,
             input: program,
             metadata: X::default(),
+            remaining_input: None,
         }
     }
 }
 
-impl<T: AsBytes, X> TrackedLocation<T, X> {
+impl<T: AsBytes, X> TrackedLocation<'_, T, X> {
     pub fn new_with_pos_and_meta(
         program: T,
         offset: usize,
@@ -93,17 +98,18 @@ impl<T: AsBytes, X> TrackedLocation<T, X> {
             char: char,
             input: program,
             metadata: metadata,
+            remaining_input: None,
         }
     }
 }
 
-impl<T: AsBytes, X: Default> From<T> for TrackedLocation<T, X> {
+impl<T: AsBytes, X: Default> From<T> for TrackedLocation<'_, T, X> {
     fn from(program: T) -> Self {
         Self::new_with_metadata(program, X::default())
     }
 }
 
-impl<T: PartialEq, X> PartialEq for TrackedLocation<T, X> {
+impl<T: PartialEq, X> PartialEq for TrackedLocation<'_, T, X> {
     fn eq(&self, other: &Self) -> bool {
         self.offset == other.offset
             && self.line == other.line
@@ -112,21 +118,21 @@ impl<T: PartialEq, X> PartialEq for TrackedLocation<T, X> {
     }
 }
 
-impl<T: Eq, X> Eq for TrackedLocation<T, X> {}
+impl<T: Eq, X> Eq for TrackedLocation<'_, T, X> {}
 
-impl<T: AsBytes, X> AsBytes for TrackedLocation<T, X> {
+impl<T: AsBytes, X> AsBytes for TrackedLocation<'_, T, X> {
     fn as_bytes(&self) -> &[u8] {
         self.input.as_bytes()
     }
 }
 
-impl<T: InputLength, X> InputLength for TrackedLocation<T, X> {
+impl<T: InputLength, X> InputLength for TrackedLocation<'_, T, X> {
     fn input_len(&self) -> usize {
         self.input.input_len()
     }
 }
 
-impl<T, X> InputTake for TrackedLocation<T, X>
+impl<T, X> InputTake for TrackedLocation<'_, T, X>
 where
     Self: Slice<RangeFrom<usize>> + Slice<RangeTo<usize>>,
 {
@@ -138,7 +144,7 @@ where
     }
 }
 
-impl<T, X> InputTakeAtPosition for TrackedLocation<T, X>
+impl<T, X> InputTakeAtPosition for TrackedLocation<'_, T, X>
 where
     T: InputTakeAtPosition + InputLength + InputIter,
     Self: Slice<RangeFrom<usize>> + Slice<RangeTo<usize>> + Clone,
@@ -209,7 +215,7 @@ where
     }
 }
 
-impl<'a, X> InputIter for TrackedLocation<&'a str, X> {
+impl<'a, X> InputIter for TrackedLocation<'a, &'a str, X> {
     type Item = char;
     type Iter = CharIndices<'a>;
     type IterElem = Chars<'a>;
@@ -231,7 +237,7 @@ impl<'a, X> InputIter for TrackedLocation<&'a str, X> {
     }
 }
 
-impl<'a, X> IntoIterator for TrackedLocation<&'a str, X> {
+impl<'a, X> IntoIterator for TrackedLocation<'a, &'a str, X> {
     type Item = char;
     type IntoIter = Chars<'a>;
     fn into_iter(self) -> Self::IntoIter {
@@ -239,7 +245,9 @@ impl<'a, X> IntoIterator for TrackedLocation<&'a str, X> {
     }
 }
 
-impl<A: Compare<B>, B: Into<TrackedLocation<B, X>>, X> Compare<B> for TrackedLocation<A, X> {
+impl<'a, A: Compare<B>, B: 'a + Into<TrackedLocation<'a, B, X>>, X> Compare<B>
+    for TrackedLocation<'a, A, X>
+{
     fn compare(&self, other: B) -> CompareResult {
         self.input.compare(other.into().input)
     }
@@ -248,7 +256,7 @@ impl<A: Compare<B>, B: Into<TrackedLocation<B, X>>, X> Compare<B> for TrackedLoc
     }
 }
 
-impl<T, X> Offset for TrackedLocation<T, X> {
+impl<T, X> Offset for TrackedLocation<'_, T, X> {
     fn offset(&self, second: &Self) -> usize {
         second.offset - self.offset
     }
@@ -256,7 +264,7 @@ impl<T, X> Offset for TrackedLocation<T, X> {
 
 macro_rules! impl_slice_range {
     ( $fragment_type:ty, $range_type:ty, $can_return_self:expr ) => {
-        impl<'a, X: Clone> Slice<$range_type> for TrackedLocation<$fragment_type, X> {
+        impl<'a, X: Clone> Slice<$range_type> for TrackedLocation<'a, $fragment_type, X> {
             fn slice(&self, range: $range_type) -> Self {
                 if $can_return_self(&range) {
                     return self.clone();
@@ -270,6 +278,7 @@ macro_rules! impl_slice_range {
                         offset: self.offset,
                         input: next_fragment,
                         metadata: self.metadata.clone(),
+                        remaining_input: self.remaining_input,
                     };
                 }
 
@@ -292,6 +301,7 @@ macro_rules! impl_slice_range {
                     offset: next_offset,
                     input: next_fragment,
                     metadata: self.metadata.clone(),
+                    remaining_input: self.remaining_input,
                 }
             }
         }
@@ -308,31 +318,31 @@ macro_rules! impl_slice_ranges {
 }
 impl_slice_ranges! {&'a str}
 
-impl<T: FindToken<Token>, Token, X> FindToken<Token> for TrackedLocation<T, X> {
+impl<T: FindToken<Token>, Token, X> FindToken<Token> for TrackedLocation<'_, T, X> {
     fn find_token(&self, token: Token) -> bool {
         self.input.find_token(token)
     }
 }
 
-impl<'a, T: FindSubstring<&'a str>, X> FindSubstring<&'a str> for TrackedLocation<T, X> {
+impl<'a, T: FindSubstring<&'a str>, X> FindSubstring<&'a str> for TrackedLocation<'_, T, X> {
     fn find_substring(&self, substr: &'a str) -> Option<usize> {
         self.input.find_substring(substr)
     }
 }
 
-impl<R: FromStr, T: ParseTo<R>, X> ParseTo<R> for TrackedLocation<T, X> {
+impl<R: FromStr, T: ParseTo<R>, X> ParseTo<R> for TrackedLocation<'_, T, X> {
     fn parse_to(&self) -> Option<R> {
         self.input.parse_to()
     }
 }
 
-impl<T: ToString, X> std::fmt::Display for TrackedLocation<T, X> {
+impl<T: ToString, X> std::fmt::Display for TrackedLocation<'_, T, X> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.write_str(&self.input.to_string())
     }
 }
 
-impl<'a, I, E, T, X> ExtendInto for TrackedLocation<T, X>
+impl<'a, I, E, T, X> ExtendInto for TrackedLocation<'_, T, X>
 where
     E: Default + Extend<I>,
     T: ExtendInto<Item = I, Extender = E>,
