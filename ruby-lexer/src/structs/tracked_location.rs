@@ -270,6 +270,7 @@ macro_rules! impl_slice_range {
                 if $can_return_self(&range) {
                     return self.clone();
                 }
+                // Deal with ranges that split the boundary
                 let next_fragment = self.input.slice(range);
                 let consumed_len = self.input.offset(&next_fragment);
                 if consumed_len == 0 {
@@ -371,4 +372,19 @@ where
     T: InputIter + InputTake,
 {
     nom::bytes::complete::take(0usize)(i)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    type Input<'a> = TrackedLocation<&'a str, ()>;
+    #[test]
+    fn test_continuations() {
+        let mut i = Input::new("foobar");
+        let j = Input::new_with_pos("baz", 0, 4, 0);
+        assert_eq!(6, i.input_len());
+        i.remaining_input = Some(Box::new(j));
+        assert_eq!(9, i.input_len());
+        assert_eq!(Input::new("foobarbaz"), nom::combinator::rest::<Input, (Input, nom::error::ErrorKind)>(i).unwrap().0);
+    }
 }
