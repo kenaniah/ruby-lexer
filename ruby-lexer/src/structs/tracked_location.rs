@@ -128,7 +128,10 @@ impl<T: AsBytes, X> AsBytes for TrackedLocation<T, X> {
 
 impl<T: InputLength, X> InputLength for TrackedLocation<T, X> {
     fn input_len(&self) -> usize {
-        self.input.input_len()
+        match &self.remaining_input {
+            Some(input) => self.input.input_len() + input.input_len(),
+            _ => self.input.input_len(),
+        }
     }
 }
 
@@ -270,13 +273,16 @@ macro_rules! impl_slice_range {
                 let next_fragment = self.input.slice(range);
                 let consumed_len = self.input.offset(&next_fragment);
                 if consumed_len == 0 {
-                    return Self {
-                        line: self.line,
-                        char: self.char,
-                        offset: self.offset,
-                        input: next_fragment,
-                        metadata: self.metadata.clone(),
-                        remaining_input: self.remaining_input.clone(),
+                    return match &self.remaining_input {
+                        Some(input) => (**input).to_owned(),
+                        _ => Self {
+                            line: self.line,
+                            char: self.char,
+                            offset: self.offset,
+                            input: next_fragment,
+                            metadata: self.metadata.clone(),
+                            remaining_input: self.remaining_input.clone(),
+                        },
                     };
                 }
 
