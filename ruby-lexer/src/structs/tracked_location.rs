@@ -128,10 +128,11 @@ impl<T: AsBytes, X> AsBytes for TrackedLocation<T, X> {
 
 impl<T: InputLength, X> InputLength for TrackedLocation<T, X> {
     fn input_len(&self) -> usize {
-        match &self.remaining_input {
-            Some(input) => self.input.input_len() + input.input_len(),
-            _ => self.input.input_len(),
-        }
+        self.input.input_len()
+        // match &self.remaining_input {
+        //     Some(input) => self.input.input_len() + input.input_len(),
+        //     _ => self.input.input_len(),
+        // }
     }
 }
 
@@ -263,65 +264,144 @@ impl<T, X> Offset for TrackedLocation<T, X> {
     }
 }
 
-macro_rules! impl_slice_range {
-    ( $fragment_type:ty, $range_type:ty, $can_return_self:expr ) => {
-        impl<'a, X: Clone> Slice<$range_type> for TrackedLocation<$fragment_type, X> {
-            fn slice(&self, range: $range_type) -> Self {
-                if $can_return_self(&range) {
-                    return self.clone();
-                }
-                // Deal with ranges that split the boundary
-                let next_fragment = self.input.slice(range);
-                let consumed_len = self.input.offset(&next_fragment);
-                if consumed_len == 0 {
-                    return match &self.remaining_input {
-                        Some(input) => (**input).to_owned(),
-                        _ => Self {
-                            line: self.line,
-                            char: self.char,
-                            offset: self.offset,
-                            input: next_fragment,
-                            metadata: self.metadata.clone(),
-                            remaining_input: self.remaining_input.clone(),
-                        },
-                    };
-                }
-
-                let consumed = self.input.slice(..consumed_len);
-                let next_offset = self.offset + consumed_len;
-
-                let consumed_as_bytes = consumed.as_bytes();
-                let iter = memchr::Memchr::new(b'\n', consumed_as_bytes);
-                let number_of_lines = iter.count();
-                let next_line = self.line + number_of_lines;
-                let next_char = if number_of_lines == 0 {
-                    self.char + consumed.chars().count()
-                } else {
-                    1 + consumed.chars().rev().position(|c| c == '\n').unwrap()
-                };
-
-                Self {
-                    line: next_line,
-                    char: next_char,
-                    offset: next_offset,
-                    input: next_fragment,
-                    metadata: self.metadata.clone(),
-                    remaining_input: self.remaining_input.clone(),
-                }
-            }
-        }
-    };
-}
-
-macro_rules! impl_slice_ranges {
-    ( $fragment_type:ty ) => {
-        impl_slice_range! {$fragment_type, Range<usize>, |_| false }
-        impl_slice_range! {$fragment_type, RangeTo<usize>, |_| false }
-        impl_slice_range! {$fragment_type, RangeFrom<usize>, |range:&RangeFrom<usize>| range.start == 0}
-        impl_slice_range! {$fragment_type, RangeFull, |_| true}
+impl<'a, T: Clone, X: Clone> Slice<RangeFull> for TrackedLocation<T, X> {
+    fn slice(&self, _range: RangeFull) -> Self {
+        self.clone()
     }
 }
-impl_slice_ranges! {&'a str}
+
+impl<'a, X: Clone> Slice<RangeFrom<usize>> for TrackedLocation<&'a str, X> {
+    fn slice(&self, range: RangeFrom<usize>) -> Self {
+        if range.start == 0 {
+            return self.clone();
+        }
+        let next_fragment = self.input.slice(range);
+        if let Some(j) = &self.remaining_input {
+            if next_fragment.input_len() == 0 {
+                return (**j).to_owned();
+            }
+        };
+        self.next_from_slice(next_fragment)
+    }
+}
+
+impl<'a, X: Clone> Slice<RangeTo<usize>> for TrackedLocation<&'a str, X> {
+    fn slice(&self, range: RangeTo<usize>) -> Self {
+        self.next_from_slice(self.input.slice(range))
+    }
+}
+
+impl<'a, X: Clone> Slice<Range<usize>> for TrackedLocation<&'a str, X> {
+    fn slice(&self, range: Range<usize>) -> Self {
+        self.next_from_slice(self.input.slice(range))
+    }
+}
+
+impl<'a, X: Clone> TrackedLocation<&'a str, X> {
+    fn next_from_slice(&self, next_fragment: &'a str) -> Self {
+        let consumed_len = self.input.offset(&next_fragment);
+        if let Some(j) = &self.remaining_input {
+            if self.input.input_len() == 0 {
+                return (**j).to_owned();
+            }
+        };
+        if consumed_len == 0 {
+            return Self {
+                line: self.line,
+                char: self.char,
+                offset: self.offset,
+                input: next_fragment,
+                metadata: self.metadata.clone(),
+                remaining_input: self.remaining_input.clone(),
+            };
+        }
+
+        let consumed = self.input.slice(..consumed_len);
+        let next_offset = self.offset + consumed_len;
+
+        let consumed_as_bytes = consumed.as_bytes();
+        let iter = memchr::Memchr::new(b'\n', consumed_as_bytes);
+        let number_of_lines = iter.count();
+        let next_line = self.line + number_of_lines;
+        let next_char = if number_of_lines == 0 {
+            self.char + consumed.chars().count()
+        } else {
+            1 + consumed.chars().rev().position(|c| c == '\n').unwrap()
+        };
+
+        Self {
+            line: next_line,
+            char: next_char,
+            offset: next_offset,
+            input: next_fragment,
+            metadata: self.metadata.clone(),
+            remaining_input: self.remaining_input.clone(),
+        }
+    }
+}
+
+// macro_rules! impl_slice_range {
+//     ( $fragment_type:ty, $range_type:ty, $can_return_self:expr ) => {
+//         impl<'a, X: Clone> Slice<$range_type> for TrackedLocation<$fragment_type, X> {
+//             fn slice(&self, range: $range_type) -> Self {
+//                 if $can_return_self(&range) {
+//                     return self.clone();
+//                 }
+//                 // Deal with ranges that split the boundary
+//                 println!("Range is: {:?} for {:?}", range, self.input);
+//                 let next_fragment = self.input.slice(range);
+//                 let consumed_len = self.input.offset(&next_fragment);
+//                 if let Some(j) = &self.remaining_input {
+//                     if self.input.input_len() == 0 {
+//                         return (**j).to_owned();
+//                     }
+//                 };
+//                 if consumed_len == 0 {
+//                     return Self {
+//                         line: self.line,
+//                         char: self.char,
+//                         offset: self.offset,
+//                         input: next_fragment,
+//                         metadata: self.metadata.clone(),
+//                         remaining_input: self.remaining_input.clone(),
+//                     };
+//                 }
+//
+//                 let consumed = self.input.slice(..consumed_len);
+//                 let next_offset = self.offset + consumed_len;
+//
+//                 let consumed_as_bytes = consumed.as_bytes();
+//                 let iter = memchr::Memchr::new(b'\n', consumed_as_bytes);
+//                 let number_of_lines = iter.count();
+//                 let next_line = self.line + number_of_lines;
+//                 let next_char = if number_of_lines == 0 {
+//                     self.char + consumed.chars().count()
+//                 } else {
+//                     1 + consumed.chars().rev().position(|c| c == '\n').unwrap()
+//                 };
+//
+//                 Self {
+//                     line: next_line,
+//                     char: next_char,
+//                     offset: next_offset,
+//                     input: next_fragment,
+//                     metadata: self.metadata.clone(),
+//                     remaining_input: self.remaining_input.clone(),
+//                 }
+//             }
+//         }
+//     };
+// }
+//
+// macro_rules! impl_slice_ranges {
+//     ( $fragment_type:ty ) => {
+//         //impl_slice_range! {$fragment_type, Range<usize>, |_| false }
+//         //impl_slice_range! {$fragment_type, RangeTo<usize>, |_| false }
+//         //impl_slice_range! {$fragment_type, RangeFrom<usize>, |range:&RangeFrom<usize>| range.start == 0}
+//         //impl_slice_range! {$fragment_type, RangeFull, |_| true}
+//     };
+// }
+// impl_slice_ranges! {&'a str}
 
 impl<T: FindToken<Token>, Token, X> FindToken<Token> for TrackedLocation<T, X> {
     fn find_token(&self, token: Token) -> bool {
@@ -384,7 +464,12 @@ mod tests {
         let j = Input::new_with_pos("baz", 0, 4, 0);
         assert_eq!(6, i.input_len());
         i.remaining_input = Some(Box::new(j));
-        assert_eq!(9, i.input_len());
-        assert_eq!(Input::new("foobarbaz"), nom::combinator::rest::<Input, (Input, nom::error::ErrorKind)>(i).unwrap().0);
+        assert_eq!(6, i.input_len());
+        assert_eq!(
+            Input::new_with_pos("baz", 0, 4, 0),
+            nom::combinator::rest::<Input, (Input, nom::error::ErrorKind)>(i)
+                .unwrap()
+                .0
+        );
     }
 }

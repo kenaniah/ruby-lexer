@@ -322,7 +322,7 @@ mod tests {
         assert_err!("<<foo\nbar\nfoo\nextra");
         // Unindented heredocs
         assert_ok!("<<h\nh", s(""));
-        assert_partial!("<<foo + rest * of * line\nbar\nfoo\n", s("bar\n"));
+        assert_ok!("<<foo + rest * of * line\nbar\nfoo\n", s("bar\n"));
         assert_ok!("<<foo\n  meh\n  bar\n\nfoo", s("  meh\n  bar\n\n"));
         assert_ok!("<<-`foo`\nbar\n foot\nfoo", cs("bar\n foot\n"));
         assert_err!("<<foo\nbar\n  foo\n");
@@ -350,7 +350,7 @@ mod tests {
         assert_ok!("<<-'foo'\nbar#{2.4}\nfoo", s("bar#{2.4}\n"));
         assert_ok!("<<-foo\nbar\\#{2.4}\nfoo", s("bar#{2.4}\n"));
         // Squiggly heredocs
-        assert_partial!("<<~foo rest_of_line\n    foo", s(""));
+        assert_ok!("<<~foo rest_of_line\n    foo", s(""));
         assert_ok!("<<~foo\n#bar\nbaz\nfoo", s("#bar\nbaz\n"));
         assert_ok!(
             "<<~foo\n#{2}  bar\nfoo",
