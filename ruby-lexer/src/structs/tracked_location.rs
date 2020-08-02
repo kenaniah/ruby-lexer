@@ -129,10 +129,6 @@ impl<T: AsBytes, X> AsBytes for TrackedLocation<T, X> {
 impl<T: InputLength, X> InputLength for TrackedLocation<T, X> {
     fn input_len(&self) -> usize {
         self.input.input_len()
-        // match &self.remaining_input {
-        //     Some(input) => self.input.input_len() + input.input_len(),
-        //     _ => self.input.input_len(),
-        // }
     }
 }
 
@@ -398,12 +394,12 @@ mod tests {
     #[test]
     fn test_continuations() {
         let mut i = Input::new("foobar");
-        let j = Input::new_with_pos("baz", 0, 4, 0);
+        let j = Input::new_with_pos("baz", 12, 4, 0);
         assert_eq!(6, i.input_len());
         i.remaining_input = Some(Box::new(j));
         assert_eq!(6, i.input_len());
         assert_eq!(
-            Input::new_with_pos("baz", 0, 4, 0),
+            Input::new_with_pos("baz", 12, 4, 0),
             nom::combinator::rest::<Input, (Input, nom::error::ErrorKind)>(i)
                 .unwrap()
                 .0
