@@ -196,7 +196,10 @@ fn non_indented_heredoc_end_line(i: Input) -> ParseResult {
     if !i.beginning_of_line() {
         return Err(nom::Err::Error((i, crate::ErrorKind::Space)));
     }
-    terminated(heredoc_quote_type_identifier, opt(line_terminator))(i)
+    terminated(
+        heredoc_quote_type_identifier,
+        alt((line_terminator, at_eof)),
+    )(i)
 }
 
 /// *non_quoted_delimiter_identifier* | *single_quoted_delimiter_identifier* | *double_quoted_delimiter_identifier* | *command_quoted_delimiter_identifier*
@@ -319,10 +322,10 @@ mod tests {
         use_parser!(here_document);
         // Synax errors
         assert_err!("<<foo\nbar\nfood\n");
-        assert_err!("<<foo\nbar\nfoo\nextra");
+        assert_partial!("<<foo\nbar\nfoo\nextra");
         // Unindented heredocs
         assert_ok!("<<h\nh", s(""));
-        assert_ok!("<<foo + rest * of * line\nbar\nfoo\n", s("bar\n"));
+        assert_partial!("<<foo + rest * of * line\nbar\nfoo\n", s("bar\n"));
         assert_ok!("<<foo\n  meh\n  bar\n\nfoo", s("  meh\n  bar\n\n"));
         assert_ok!("<<-`foo`\nbar\n foot\nfoo", cs("bar\n foot\n"));
         assert_err!("<<foo\nbar\n  foo\n");
@@ -350,7 +353,7 @@ mod tests {
         assert_ok!("<<-'foo'\nbar#{2.4}\nfoo", s("bar#{2.4}\n"));
         assert_ok!("<<-foo\nbar\\#{2.4}\nfoo", s("bar#{2.4}\n"));
         // Squiggly heredocs
-        assert_ok!("<<~foo rest_of_line\n    foo", s(""));
+        assert_partial!("<<~foo rest_of_line\n    foo", s(""));
         assert_ok!("<<~foo\n#bar\nbaz\nfoo", s("#bar\nbaz\n"));
         assert_ok!(
             "<<~foo\n#{2}  bar\nfoo",
